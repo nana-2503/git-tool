@@ -17,7 +17,20 @@ import { fileURLToPath } from 'node:url';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, '..');
-const OUT = '/root/dsh-github-push/client.js';
+/*
+ * Output = the bundle package's client.js. Two layouts resolve: the repo
+ * (this workspace is `client-build/`, the package is the parent) and the
+ * live install (the package is the sibling `dsh-github-push/`). The parent
+ * that actually holds the bundle's package.json wins.
+ */
+const OUT = [join(root, '..', 'client.js'), join(root, '..', 'dsh-github-push', 'client.js')]
+  .find((p) => {
+    try {
+      return JSON.parse(readFileSync(join(dirname(p), 'package.json'), 'utf8')).name === '@local/dsh-github-push';
+    } catch {
+      return false;
+    }
+  });
 
 /** Must equal the bundle package name: the module table keys factories by it. */
 const MODULE_ID = '@local/dsh-github-push';

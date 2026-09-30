@@ -16,11 +16,11 @@ session in that workspace runs `git push`**.
 
 ```bash
 # the bundle lives in this directory
-dsh plugin --profile <profile> add /root/dsh-github-push
+dsh plugin --profile <profile> add .
 ```
 
 Or, from a Harness session, use the Plugin Manager with
-`action: install_bundle` and `target: /root/dsh-github-push`.
+`action: install_bundle` and `target: <仓库绝对路径>`.
 
 ## Sign in
 
@@ -86,7 +86,7 @@ Enterprise host.
   `POST /api/github-push.rpc` route inside Connection's authentication fence, and one
   `tools/result` listener for the automatic mirror.
 - **Client half** (`client.js`) is a **built artifact** — do not edit it by hand. It is
-  produced by the build workspace in `/root/dsh-shadcn-build` and registers two things: the
+  produced by the build workspace in `client-build` and registers two things: the
   `sidebar.footer.action` row and the `shell.overlay` dialog it opens.
 
 ### The Client half is the official shadcn components
@@ -99,7 +99,7 @@ items:
 npx shadcn@latest add @shadcn/button @shadcn/card @shadcn/badge @shadcn/input @shadcn/label \
   @shadcn/separator @shadcn/switch @shadcn/spinner @shadcn/alert @shadcn/empty @shadcn/field \
   @shadcn/dialog @shadcn/select @shadcn/scroll-area @shadcn/skeleton @shadcn/item \
-  --yes --overwrite --cwd /root/dsh-shadcn-build
+  --yes --overwrite --cwd client-build
 ```
 
 | Piece | Where it comes from |
@@ -123,11 +123,11 @@ platform module table — is bundled into the single artifact, so the plugin sti
 no dependencies. Build it with:
 
 ```bash
-cd /root/dsh-shadcn-build
+cd client-build
 npm install          # once
 npm run vendor       # the shadcn CLI, then the two rewrites below
 npm run css          # tailwind -> dist/shadcn.css
-npm run bundle       # esbuild -> /root/dsh-github-push/client.js
+npm run bundle       # esbuild -> ../client.js
 node tests/render.mjs
 node scripts/check-css.mjs
 node tests/verify-vendor.mjs
@@ -296,9 +296,9 @@ keeps `title` + `aria-label` instead.
 ## Verification
 
 ```bash
-node /root/dsh-github-push/tests/host-smoke.mjs   # Host half against a fake Cordis context
-node /root/dsh-github-push/tests/push-engine.mjs  # real `git push` into local bare repos
-cd /root/dsh-shadcn-build
+node tests/host-smoke.mjs   # Host half against a fake Cordis context
+node tests/push-engine.mjs  # real `git push` into local bare repos
+cd client-build
 node tests/render.mjs        # the built Client half, mounted in a real DOM
 node scripts/check-css.mjs   # every named class is defined in the compiled CSS
 node tests/verify-vendor.mjs # the files match a fresh official install, byte for byte

@@ -10,14 +10,14 @@
  * Run with: node tests/audit-render.mjs
  */
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { JSDOM } from 'jsdom';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, '..');
-const artifact = join(root, '..', 'dsh-github-push', 'client.js');
+const artifact = [join(root, '..', 'client.js'), join(root, '..', 'dsh-github-push', 'client.js')].find((p) => existsSync(p));
 
 const dom = new JSDOM('<!doctype html><html><body><div id="host"></div></body></html>', {
   url: 'http://127.0.0.1:3080/',

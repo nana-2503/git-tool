@@ -11,7 +11,7 @@
  * Run with: node tests/browser/run.mjs
  */
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
@@ -23,8 +23,22 @@ mkdirSync(OUT, { recursive: true });
 
 /* ------------------------------- the page -------------------------------- */
 
-const reactBundle = readFileSync(join(root, '.browser', 'react-bundle.js'), 'utf8');
-const artifact = readFileSync(join(root, '..', 'dsh-github-push', 'client.js'), 'utf8');
+const reactBundlePath = join(OUT, 'react-bundle.js');
+if (!existsSync(reactBundlePath)) {
+  // The harness needs the platform externals (react, react-dom, jsx-runtime)
+  // as one classic script. `.browser/` is gitignored scratch, so a fresh
+  // clone rebuilds it here rather than shipping a committed blob.
+  const { build } = await import('esbuild');
+  const built = await build({
+    entryPoints: [join(here, 'react-entry.jsx')],
+    bundle: true, format: 'iife', platform: 'browser',
+    target: ['chrome120', 'firefox120', 'safari17'], minify: true,
+    jsx: 'automatic', write: false, logLevel: 'silent',
+  });
+  writeFileSync(reactBundlePath, built.outputFiles[0].text);
+}
+const reactBundle = readFileSync(reactBundlePath, 'utf8');
+const artifact = [join(root, '..', 'client.js'), join(root, '..', 'dsh-github-push', 'client.js')].map((p) => existsSync(p) ? readFileSync(p, 'utf8') : null).find((s) => s !== null);
 const css = readFileSync(join(root, 'dist', 'shadcn.css'), 'utf8');
 
 /**

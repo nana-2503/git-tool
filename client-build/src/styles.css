@@ -49,6 +49,16 @@
 
 @source "./plugin.jsx";
 @source "../vendor/ui/**/*.tsx";
+/*
+ * Tailwind's automatic content detection also scans the workspace, and the
+ * browser-test scratch dir holds a full React bundle + harness page whose
+ * minified text yields thousands of junk candidates (~6KB of phantom
+ * utilities, measured). The build must not depend on whether `.browser/`
+ * happens to exist — exclude it explicitly so live and clean-clone builds
+ * produce the same stylesheet.
+ */
+@source not "../.browser/**";
+@source not "../dist/**";
 
 /* The Harness has no `.dark` class; this matches nothing even if one appears. */
 @custom-variant dark (&:where(.gp-theme-never-dark, .gp-theme-never-dark *));
