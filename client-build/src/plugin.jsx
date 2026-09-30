@@ -286,6 +286,9 @@ const zh = {
   save: "保存",
   unbind: "解绑",
   pushNow: "立即推送",
+  commandPlaceholder: "输入 /推送 立即推送",
+  selectWorkspaceFirst: "请先选择一个工作区",
+  noBinding: "当前工作区未绑定仓库",
   autoPush: "会话 push 时自动同步",
   autoPushHint: "会话里执行 git push 后，自动推送到绑定仓库。",
   autoCommit: "推送前自动提交改动",
@@ -370,6 +373,9 @@ const en = {
   save: "Save",
   unbind: "Unbind",
   pushNow: "Push now",
+  commandPlaceholder: "Type /push to push now",
+  selectWorkspaceFirst: "Select a workspace first",
+  noBinding: "No repository bound to this workspace",
   autoPush: "Auto-sync when a session pushes",
   autoPushHint: "After `git push` in a session, push to the bound repository too.",
   autoCommit: "Commit local changes before pushing",
@@ -1183,6 +1189,77 @@ function ActivityCard({ t, activity }) {
   )
 }
 
+/**
+ * A tiny command line inside the dialog: type `/推送` or `/push` and press
+ * Enter to push the currently selected workspace. It reports success and
+ * failure inline, and refreshes the activity feed on success.
+ */
+function CommandBar({ t, selected, binding, onChanged }) {
+  const [value, setValue] = React.useState("")
+  const [pending, setPending] = React.useState(false)
+  const [result, setResult] = React.useState(null)
+
+  const run = async () => {
+    const text = value.trim()
+    if (text !== "/推送" && text !== "/push") return
+    if (selected === null) {
+      setResult({ ok: false, message: t("selectWorkspaceFirst") })
+      return
+    }
+    if (binding === undefined) {
+      setResult({ ok: false, message: t("noBinding") })
+      return
+    }
+    setPending(true)
+    setResult(null)
+    try {
+      const outcome = await callRpc("push.now", { workspace: selected })
+      setResult({ ok: true, message: typeof outcome?.summary === "string" ? outcome.summary : "" })
+      await onChanged?.()
+      setValue("")
+    } catch (failure) {
+      setResult({ ok: false, message: String(failure?.message ?? failure) })
+    } finally {
+      setPending(false)
+    }
+  }
+
+  const handleKeyDown = (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault()
+      void run()
+    }
+  }
+
+  return (
+    <div className="flex min-w-0 flex-col gap-2">
+      <div className="flex min-w-0 items-center gap-2">
+        <Input
+          value={value}
+          onChange={(event) => setValue(event.target.value)}
+          onKeyDown={handleKeyDown}
+          placeholder={t("commandPlaceholder")}
+          disabled={pending || selected === null}
+          className="flex-1"
+        />
+        <Button
+          variant="outline"
+          className="gp-fill shrink-0"
+          disabled={pending || selected === null || binding === undefined || (value.trim() !== "/推送" && value.trim() !== "/push")}
+          onClick={() => void run()}
+        >
+          {pending ? <Working>{t("pushing")}</Working> : t("pushNow")}
+        </Button>
+      </div>
+      {result !== null && result.message !== "" ? (
+        <Alert variant={result.ok ? "default" : "destructive"}>
+          <AlertDescription>{result.message}</AlertDescription>
+        </Alert>
+      ) : null}
+    </div>
+  )
+}
+
 /** Loading stand-in shaped like the real grid, so nothing jumps when it fills. */
 function LoadingSkeleton({ t }) {
   return (
@@ -1375,6 +1452,12 @@ function SettingsDialog({ ctx }) {
                     />
                   )}
                   <ActivityCard t={t} activity={activity} />
+                  <CommandBar
+                    t={t}
+                    selected={selected}
+                    binding={selectedBinding}
+                    onChanged={refresh}
+                  />
                 </div>
               </div>
 
