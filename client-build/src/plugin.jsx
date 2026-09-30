@@ -94,7 +94,7 @@ const TOKEN_NEW_URL =
 const DEVICE_URL = "https://github.com/login/device"
 
 /** Activity rows shown per page. */
-const ACTIVITY_PAGE = 10
+const ACTIVITY_PAGE = 5
 
 /* ======================================================================== */
 /* helpers                                                                  */
@@ -1149,7 +1149,7 @@ function ActivityCard({ t, activity }) {
                 </Item>
               ))}
             </ItemGroup>
-            {totalPages > 1 ? (
+            {activity.length > 0 ? (
               <div className="flex min-w-0 flex-wrap items-center justify-center gap-2">
                 <FieldDescription className="text-xs">
                   {t("activityPage", { page: safePage, total: totalPages, shown: start, end, totalItems: activity.length })}
