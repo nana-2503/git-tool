@@ -1,0 +1,15 @@
+# Bundle patch for @local/dsh-github-push.
+# `plugin_manager` install_bundle adds this package to the profile's bundles and
+# applies this layer, so the Host half mounts without hand-editing the profile.
+#
+# Optional row config (all fields optional):
+#   clientId:        GitHub OAuth App client id used for the device flow login.
+#   apiBase:         GitHub REST base URL (default https://api.github.com).
+#   gitBase:         git remote base URL (default https://github.com) — set it for
+#                    GitHub Enterprise, e.g. https://github.mycorp.com.
+#   autoPushDefault: default value for a new binding's automatic push (default true).
+#   gitTimeoutMs:    per-git-invocation timeout in milliseconds (default 180000).
+- insert:
+    - id: github-push
+      name: '@local/dsh-github-push'
+      config: {}

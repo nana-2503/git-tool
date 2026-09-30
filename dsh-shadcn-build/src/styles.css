@@ -1,0 +1,516 @@
+/* =====================================================================
+ * Tailwind input for the plugin's Client half.
+ *
+ * The import chain is shadcn's own (`apps/v4/app/globals.css`), minus the parts
+ * that only make sense in a whole application:
+ *
+ *   tailwindcss/theme.css     Tailwind's scales (spacing/type/radius/…)
+ *   tw-animate-css            animate-in / fade-in-0 / zoom-in-95 / slide-in-from-*
+ *   shadcn/tailwind.css       the shadcn preset: the `data-open` / `data-closed` /
+ *                             `data-checked` / `data-selected` … variants the
+ *                             components are written against, plus `no-scrollbar`
+ *
+ * There is no style layer to import. shadcn's current Base UI components name
+ * only Tailwind utilities (`bg-popover`, `ring-1`, `size-8`, `h-9`), so the
+ * published `style-vega.css` layer of `cn-*` recipes is not part of the chain.
+ * An earlier revision of these components did carry `cn-*` classes, and that
+ * layer had to be unwrapped from its `.style-vega { … }` scope — Base UI portals
+ * the dialog popup into `document.body`, so no ancestor of ours could carry the
+ * scope and every recipe compiled to a selector that matched nothing. That whole
+ * failure mode is gone with the current components.
+ *
+ * Preflight is deliberately NOT imported: this stylesheet is injected into the
+ * live Harness page, and preflight's global resets would rewrite the host's own
+ * UI. Tailwind v4 does not need preflight for borders (the `border` utility
+ * carries its own `--tw-border-style` default).
+ *
+ * Two deliberate departures from shadcn's globals.css, both structural:
+ *
+ *  1. The token values live on `[data-dsh-github-push]`, not on `:root`. shadcn
+ *     declares `--background`, `--card`, `--radius`, … globally; a plugin that
+ *     did the same would fight the host and every other shadcn-based plugin.
+ *     Scoping keeps the official variable *names* — so `bg-popover` compiles to
+ *     `var(--popover)` exactly as published — while confining their values to
+ *     this plugin's own subtree.
+ *  2. `dark:` never matches. The Harness switches themes by swapping `--dsw-*`
+ *     values and setting `color-scheme`; it puts no `.dark` class anywhere, so
+ *     shadcn's `dark:` declarations are unreachable. The token values below are
+ *     therefore the single source of truth for both themes, and the one recipe
+ *     that genuinely needs its `dark:` branch is substituted at the bottom of
+ *     this file.
+ * ===================================================================== */
+
+@layer theme, base, utilities;
+
+@import "tailwindcss/theme.css" layer(theme);
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+@import "tailwindcss/utilities.css" layer(utilities);
+
+@source "./plugin.jsx";
+@source "../vendor/ui/**/*.tsx";
+
+/* The Harness has no `.dark` class; this matches nothing even if one appears. */
+@custom-variant dark (&:where(.gp-theme-never-dark, .gp-theme-never-dark *));
+
+/*
+ * shadcn's `@theme inline`, verbatim in shape: every `--color-X` points at the
+ * plain `--X` variable. `inline` keeps these out of `:root`, so each utility
+ * compiles straight to `var(--X)` and resolves against the scoped block below.
+ */
+@theme inline {
+  --breakpoint-3xl: 1600px;
+  --breakpoint-4xl: 2000px;
+  --font-sans: inherit;
+  --font-heading: inherit;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-surface: var(--surface);
+  --color-surface-foreground: var(--surface-foreground);
+  --color-code: var(--code);
+  --color-code-foreground: var(--code-foreground);
+  --color-code-highlight: var(--code-highlight);
+  --color-code-number: var(--code-number);
+  --color-selection: var(--selection);
+  --color-selection-foreground: var(--selection-foreground);
+}
+
+/*
+ * The token values, bound to DeepSeek Harness theme tokens. This is the only
+ * place in the build where a value is chosen rather than copied: shadcn's
+ * variable names on the left, the Harness's on the right.
+ */
+[data-dsh-github-push] {
+  --radius: 0.625rem;
+
+  /* The radius scale has to exist as real variables, not only inlined by
+     `@theme inline`. `rounded-md` compiles to the inlined value and resolves
+     fine, but shadcn's icon buttons use the arbitrary value
+     `rounded-[min(var(--radius-md),10px)]` — and Tailwind does not look inside an
+     arbitrary value for a theme variable, so that rule literally references
+     `var(--radius-md)`. With `inline` nothing emits it, the `min()` is invalid,
+     and every `size-icon-*` button renders with square corners (measured). */
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+
+  --background: var(--dsw-alias-bg-base);
+  --foreground: var(--dsw-alias-label-primary);
+  --card: var(--dsw-alias-bg-layer-1);
+  --card-foreground: var(--dsw-alias-label-primary);
+  --popover: var(--dsw-alias-bg-layer-2);
+  --popover-foreground: var(--dsw-alias-label-primary);
+  --primary: var(--dsw-alias-brand-primary);
+  --primary-foreground: var(--dsw-alias-bg-base);
+  --secondary: var(--dsw-alias-bg-layer-2);
+  --secondary-foreground: var(--dsw-alias-label-primary);
+  --muted: var(--dsw-alias-interactive-bg-hover);
+  --muted-foreground: var(--dsw-alias-label-secondary);
+  --accent: var(--dsw-alias-interactive-bg-hover);
+  --accent-foreground: var(--dsw-alias-label-primary);
+  --destructive: var(--dsw-alias-state-error-primary);
+  --destructive-foreground: var(--dsw-alias-bg-base);
+  --border: var(--dsw-alias-border-l2);
+  --input: var(--dsw-alias-border-l2);
+  --ring: var(--dsw-alias-brand-primary);
+
+  --chart-1: var(--dsw-alias-brand-primary);
+  --chart-2: var(--dsw-alias-state-success-primary);
+  --chart-3: var(--dsw-alias-state-warn-primary);
+  --chart-4: var(--dsw-alias-state-error-primary);
+  --chart-5: var(--dsw-alias-label-secondary);
+
+  --sidebar: var(--dsw-alias-bg-layer-1);
+  --sidebar-foreground: var(--dsw-alias-label-primary);
+  --sidebar-primary: var(--dsw-alias-brand-primary);
+  --sidebar-primary-foreground: var(--dsw-alias-bg-base);
+  --sidebar-accent: var(--dsw-alias-interactive-bg-hover);
+  --sidebar-accent-foreground: var(--dsw-alias-label-primary);
+  --sidebar-border: var(--dsw-alias-border-l2);
+  --sidebar-ring: var(--dsw-alias-brand-primary);
+
+  --surface: var(--dsw-alias-bg-layer-2);
+  --surface-foreground: var(--dsw-alias-label-primary);
+  --code: var(--dsw-alias-bg-layer-1);
+  --code-foreground: var(--dsw-alias-label-primary);
+  --code-highlight: var(--dsw-alias-interactive-bg-hover);
+  --code-number: var(--dsw-alias-label-secondary);
+  --selection: var(--dsw-alias-brand-primary);
+  --selection-foreground: var(--dsw-alias-bg-base);
+
+  /* The styling basics shadcn's global base layer would have provided. */
+  color: var(--foreground);
+  font: inherit;
+  font-size: 13px;
+  line-height: 20px;
+}
+[data-dsh-github-push] *,
+[data-dsh-github-push] *::before,
+[data-dsh-github-push] *::after {
+  box-sizing: border-box;
+}
+
+/*
+ * The form-control resets Tailwind's preflight provides, repeated here scoped to
+ * this plugin — preflight itself is deliberately not imported, because its global
+ * resets would rewrite the host's own UI.
+ *
+ * Without them a button keeps the UA stylesheet: a grey `ButtonFace` background
+ * and `buttontext` colour. shadcn's ghost buttons set no background of their own
+ * (`bg-clip-padding` only sets `background-clip`), so the floated close and the
+ * refresh corner action rendered as grey squares with black icons — and in the
+ * Harness's dark theme those icons would have stayed black.
+ *
+ * These live in `@layer base`, so the `bg-primary` / `text-primary-foreground` /
+ * `rounded-md` utilities still win over them, exactly as they do over preflight.
+ */
+@layer base {
+  /*
+   * Tailwind v4 has no preflight here, so a bare `border` utility would fall
+   * back to `currentColor`. This supplies shadcn's default border colour —
+   * but from `@layer base`, so the components' own `border-transparent` /
+   * `border-border` utilities still outrank it. Unlayered, it beat every
+   * utility and gave the ghost buttons a visible border.
+   */
+  [data-dsh-github-push] *,
+  [data-dsh-github-push] *::before,
+  [data-dsh-github-push] *::after {
+    border-color: var(--border);
+  }
+
+  [data-dsh-github-push] button,
+  [data-dsh-github-push] input,
+  [data-dsh-github-push] select,
+  [data-dsh-github-push] textarea,
+  [data-dsh-github-push] optgroup {
+    font: inherit;
+    letter-spacing: inherit;
+    color: inherit;
+    border-radius: 0;
+    background-color: transparent;
+    opacity: 1;
+  }
+
+  /*
+   * The typographic half of the preflight reset, scoped to the plugin.
+   *
+   * Without it the UA stylesheet reaches the dialog's own elements: shadcn's
+   * DialogTitle renders an `h2` (UA: 1.5em bold, `margin: .83em 0`) and the
+   * DialogDescription a `p` (UA: `margin: 1em 0`), which is what made the old
+   * header a ~120px band of dead space around a title that ignored every size
+   * utility the plugin gave it. Headings reset to inherit + 600 so the
+   * plugin's utilities (`text-base`, `font-semibold`, …) own the look; being
+   * in `@layer base`, those utilities still outrank this block.
+   */
+  [data-dsh-github-push] :is(h1, h2, h3, h4, h5, h6) {
+    margin: 0;
+    font: inherit;
+    font-weight: 600;
+  }
+  [data-dsh-github-push] :is(p, figure, blockquote) {
+    margin: 0;
+  }
+  [data-dsh-github-push] :is(ul, ol) {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+}
+
+/*
+ * Substitution for the one recipe whose `dark:` branch is unreachable.
+ * shadcn's outline button fills from `bg-background` and lightens it with
+ * `dark:bg-input/30`. Here the `dark:` half never matches, so in the Harness's
+ * dark theme an outline button would paint the app's base surface — darker than
+ * the dialog's `bg-layer-2` — and read as a filled dark slab. The Harness's own
+ * hover fill (`#2631480f`, the value its Settings button uses) is the closest
+ * equivalent to shadcn's translucent `bg-input/30`. Applied to the select
+ * trigger, which fills the same way.
+ *
+ * Unlayered, so it outranks the `bg-background` utility; `:not(:hover)` keeps
+ * shadcn's own `hover:bg-muted` in charge once the pointer is on it.
+ */
+[data-dsh-github-push] .gp-fill:not(:hover):not(:disabled) {
+  background-color: var(--dsw-alias-interactive-bg-hover);
+}
+
+/* =====================================================================
+ * Plugin layout — the few things shadcn has no component for. Everything else
+ * in the dialog is shadcn's own parts composed with Tailwind utilities.
+ * ===================================================================== */
+
+/*
+ * The dialog's frame. shadcn's popup is `grid w-full max-w-md gap-6 p-6` with no
+ * height limit, which is not usable on a phone: it grows to its content, and
+ * `top-1/2 -translate-y-1/2` then centres a box overflowing both ends — the
+ * close button above the top edge, the card footers below the bottom edge,
+ * nothing able to reach them, because the popup is `fixed` and the page behind
+ * it does not scroll.
+ *
+ * The frame makes the popup itself the one scroller: a definite box
+ * (`height: fit-content` clamped by `max-height`) with native
+ * `overflow-y: auto`. An earlier revision instead nested a shadcn ScrollArea
+ * inside a flex column + `min-height: 0` + percentage-height chain; every
+ * link of that chain was a layered utility, and on a live page one of them
+ * lost its cascade and the dialog stopped scrolling on desktop and touch
+ * alike. Native scrolling has no chain to break — worst case the sticky
+ * header scrolls away, but the content always stays reachable.
+ *
+ *  width — `max-w-md` (28rem) is shadcn's desktop cap. The master/detail grid
+ *    needs more: `min(1040px, 100vw - 2rem)` keeps a 1rem gutter at phone
+ *    width, gives the 300px rail and the editor column room side by side from
+ *    `lg` up, and the matching `max-width` kills the `sm:max-w-md` utility.
+ *
+ *  centring — iOS WebKit mis-hits touches on a `fixed` element that carries a
+ *    transform (the visual-viewport offset behind every "the dialog will not
+ *    scroll on Safari" thread), so the frame drops the translate entirely and
+ *    centres the classic transform-free way: `inset` on all four sides, the
+ *    definite box, and `margin: auto` splitting the leftover space on both
+ *    axes.
+ *
+ *  padding and gap — the sticky header and the body carry their own insets,
+ *    so the popup's `p-6`/`gap-6` are dropped. Kept, they would inset the
+ *    title and every card by 48px instead of 24px and push the title out of
+ *    line with the corner buttons.
+ *
+ * `max-height` is a viewport unit, not a percentage: a percentage resolves
+ * against the containing block, and a `position: fixed` box only resolves it
+ * against the viewport while no ancestor establishes a different one; viewport
+ * units cannot be redirected that way. The `vh` base needs the `dvh` override
+ * below it, and both need to survive minification.
+ *
+ * shadcn's popup sets `display: grid`, `gap` and `padding` as utilities in the
+ * `utilities` layer; these are unlayered, so they win the cascade.
+ * tests/render.mjs asserts that, and asserts the height bound itself.
+ */
+.gp-dialog-panel {
+  padding: 0;
+  gap: 0;
+  /* Transform-free centring (see the note above the rule): inset on all four
+     sides, a definite box, `margin: auto`. Unlayered, these outrank the
+     `top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2` utilities. */
+  inset: 1rem;
+  margin: auto;
+  translate: none;
+  width: min(1040px, calc(100vw - 2rem));
+  max-width: min(1040px, calc(100vw - 2rem));
+  height: fit-content;
+  max-height: calc(100vh - 2rem);
+  /* The popup is the scroller. `contain` keeps a pan that hits the end of the
+     content from chaining to the locked page behind; `pan-y` names the
+     gesture explicitly for WebKit; `-webkit-overflow-scrolling` is the legacy
+     iOS momentum switch and inert on modern engines. */
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+}
+/*
+ * The dynamic viewport unit where it is supported. On a phone the static `vh` is
+ * the viewport *with the browser's toolbars hidden*, so a popup bounded by `vh`
+ * alone can grow past the visible area; `dvh` tracks the toolbars. This lives in
+ * its own rule because the minifier folds a later overriding declaration in the
+ * same rule away — which would silently drop the `vh` fallback for browsers
+ * without `dvh` and leave the popup unbounded again.
+ *
+ * Both are viewport units rather than a percentage: a percentage resolves against
+ * the containing block, and a `position: fixed` box only resolves it against the
+ * viewport while no ancestor establishes a different one. Viewport units cannot
+ * be redirected that way.
+ */
+@supports (height: 100dvh) {
+  .gp-dialog-panel {
+    max-height: calc(100dvh - 2rem);
+  }
+}
+/*
+ * …and the other half of the story for engines without `dvh` (older Android
+ * WebView / WeChat XWeb): there `vh` is the LARGE viewport, so a popup clamped
+ * to `100vh - 2rem` and centred vertically hangs past the visible area at both
+ * ends — the bottom hides behind the browser UI and reads as "cannot scroll,
+ * content cut off". Anchor it to the top instead: with `margin: 0 auto` the
+ * top inset wins, only the bottom overflows, and the popup's own scrollbar
+ * takes care of it.
+ */
+@supports not (height: 100dvh) {
+  .gp-dialog-panel {
+    margin: 0 auto;
+  }
+}
+
+/*
+ * iOS WebKit: a full-bleed `backdrop-filter` under a fixed dialog swallows
+ * touch panning inside that dialog — the wheel works, a finger does not
+ * (desktop engines do not show this). The overlay keeps its dimming; only the
+ * blur is dropped, and only for this plugin's dialog: the popup's portal
+ * container is the overlay's parent, and the popup carries `data-gp-panel`.
+ */
+div:has(> [data-gp-panel]) > [data-slot="dialog-overlay"] {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+/*
+ * The sticky header. It lives INSIDE the popup's scrollport and sticks to its
+ * top, so the title and both corner buttons stay on screen while the body
+ * scrolls under them. `background: var(--popover)` is the popup's own surface
+ * token so content cannot show through; `z-index` keeps it above the cards
+ * (which create their own stacking with `ring`). The right padding reserves
+ * the two 32px corner buttons. Unlayered, like the frame.
+ */
+.gp-dialog-head {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--popover);
+  padding: 1rem 6.5rem 0.75rem 1rem;
+}
+@media (min-width: 40rem) {
+  .gp-dialog-head {
+    padding: 1.5rem 6.5rem 1rem 1.5rem;
+  }
+}
+
+/* The body's own insets; the popup contributes none. Top is small because the
+   sticky header already carries bottom padding. */
+.gp-dialog-body {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 0.25rem 1rem 1rem;
+}
+@media (min-width: 40rem) {
+  .gp-dialog-body {
+    gap: 1.5rem;
+    padding: 0.5rem 1.5rem 1.5rem;
+  }
+}
+
+/* One 4-unit line, 2-unit gap after the close: same scale, so the two corners
+   share a line at any root font size (`top-4` compiles to
+   `calc(var(--spacing) * 4)`, not a literal 16px). Both sit inside the sticky
+   header, so they ride it while the body scrolls. */
+.gp-refresh {
+  position: absolute;
+  top: calc(var(--spacing) * 4);
+  right: calc(var(--spacing) * 14);
+  z-index: 1;
+}
+.gp-close {
+  position: absolute;
+  top: calc(var(--spacing) * 4);
+  right: calc(var(--spacing) * 4);
+  z-index: 1;
+}
+
+/* The activity list's status dot — a state colour with no shadcn equivalent. */
+.gp-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--dsw-alias-state-error-primary);
+}
+[data-ok="true"] .gp-dot { background: var(--dsw-alias-state-success-primary); }
+
+/* ----------------------------------------------- sidebar foot action row
+ * Geometry copied from the Harness's own Settings row
+ * (dsh-client-ui-settings-general SettingsRoot.module.css), so the glyph lands
+ * on the same x and the row hovers like its neighbour.
+ * ------------------------------------------------------------------------ */
+.gp-foot-row {
+  box-sizing: border-box;
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  height: 42px;
+  padding: 0 10px 0 8px;
+  border: 0;
+  border-radius: var(--dsw-radius-md);
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  font-size: 14px;
+  line-height: 22px;
+  text-align: left;
+  cursor: pointer;
+  outline: none;
+  overflow: hidden;
+  transition: background-color .15s ease, color .15s ease;
+}
+.gp-foot-row:hover { background: var(--dsw-alias-interactive-bg-hover); }
+.gp-foot-row:focus-visible {
+  outline: var(--dsw-focus-ring-width) solid var(--dsw-focus-ring-color, var(--dsw-alias-brand-primary));
+}
+.gp-foot-row[data-open="true"] {
+  background: var(--dsw-alias-interactive-bg-hover-solid);
+  color: var(--dsw-alias-brand-primary);
+}
+.gp-foot-icon { display: inline-flex; flex: none; align-items: center; justify-content: center; width: 16px; height: 16px; }
+.gp-foot-icon > svg { display: block; }
+.gp-foot-label { min-width: 0; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gp-foot-row[data-wide="false"] { width: 36px; height: 36px; padding: 0; gap: 0; justify-content: center; }
+.gp-foot-row[data-wide="false"] .gp-foot-icon { width: auto; }
+/*
+ * The sidebar.footer.action seat is a horizontal flex row whose shipped entries
+ * are icon buttons; ours is a full-width labelled row, so the row has to wrap
+ * for it to get a line of its own directly above the Settings seat. The selector
+ * is keyed to the slot's own documented anchor (data-slot), never to a hashed
+ * host class, and flex-wrap changes nothing for icon-only entries while our row
+ * is unmounted. The 2px bleed matches the Harness row so both glyph x-positions
+ * are equal.
+ */
+div:has(> div[data-slot="sidebar.footer.action"]) { flex-wrap: wrap; }
+.gp-foot-row[data-wide="true"] { flex: 0 0 calc(100% + 4px); width: calc(100% + 4px); margin: 4px -2px; }
+
+@media (prefers-reduced-motion: reduce) {
+  [data-dsh-github-push] [data-slot="button"],
+  [data-dsh-github-push] [data-slot="switch"],
+  [data-dsh-github-push] [data-slot="card"] { transition-duration: .001ms; }
+}

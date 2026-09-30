@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "GitHub 推送",
+    "description": "登录 GitHub，为每个工作区绑定仓库；会话里一推送，就自动同步到绑定的仓库。"
+  }
+}
