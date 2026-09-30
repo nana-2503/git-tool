@@ -975,26 +975,27 @@ export function apply(ctx, rawConfig) {
 
   /* ---------------- slash command ---------------- */
 
-  ctx.effect(
-    () =>
-      ctx.commands.register({
-        name: 'push',
-        description: 'Push the current workspace to its bound GitHub repository.',
-        input: { hint: '[workspace]' },
-        handler: async (invocation) => {
-          const rawInput = typeof invocation?.rawInput === 'string' ? invocation.rawInput.trim() : '';
-          const workspace = rawInput || normalizePath(invocation?.agent?.session?.header?.cwd);
-          const binding = bindingFor(workspace);
-          if (binding === undefined) {
-            return { kind: 'error', text: `No repository is bound to ${workspace || 'this session'}.` };
-          }
-          const outcome = await pushNow({ workspace, trigger: 'command', message: invocation?.rawInput });
-          if (outcome.ok) {
-            return { kind: 'success', text: outcome.summary };
-          }
-          return { kind: 'error', text: outcome.summary };
-        },
-      }),
-    'github-push: slash command /push',
-  );
+  const commands = ctx.commands;
+  const register = (definition) => ctx.effect(() => commands.register(definition), `github-push: /${definition.name}`);
+
+  register({
+    name: 'push',
+    description: 'Push the current workspace to its bound GitHub repository.',
+    input: { hint: '[workspace]' },
+    handler: async (invocation) => {
+      const rawInput = typeof invocation?.rawInput === 'string' ? invocation.rawInput.trim() : '';
+      const workspace = rawInput || normalizePath(invocation?.agent?.session?.header?.cwd);
+      const binding = bindingFor(workspace);
+      if (binding === undefined) {
+        return { kind: 'error', text: `No repository is bound to ${workspace || 'this session'}.` };
+      }
+      const outcome = await pushNow({ workspace, trigger: 'command', message: invocation?.rawInput });
+      if (outcome.ok) {
+        return { kind: 'success', text: outcome.summary };
+      }
+      return { kind: 'error', text: outcome.summary };
+    },
+  });
+
+  commands.notifyChange();
 }
