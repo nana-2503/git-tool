@@ -408,6 +408,63 @@ export function apply(ctx, rawConfig) {
     return args;
   }
 
+  /* ---------------- the commit operation ---------------- */
+
+  /** In-flight commits keyed by workspace path. */
+  const committing = new Map();
+
+  /**
+   * Commit local changes in the bound workspace, without pushing.
+   * @param binding - stored binding record.
+   * @param options - trigger label and custom message.
+   * @returns the operation outcome.
+   */
+  async function commitBinding(binding, options = {}) {
+    const trigger = options.trigger ?? 'manual';
+    const cwd = binding.workspacePath;
+    if (committing.has(cwd)) {
+      const previous = committing.get(cwd);
+      return { ok: false, summary: `A commit for ${cwd} is already running (${previous}).` };
+    }
+    const runId = `${trigger} ${new Date().toISOString()}`;
+    committing.set(cwd, runId);
+
+    try {
+      if (!existsSync(cwd)) throw new Error(`workspace directory is gone: ${cwd}`);
+
+      const inside = await git(cwd, ['rev-parse', '--is-inside-work-tree']);
+      if (!inside.ok || inside.stdout !== 'true') {
+        throw new Error(`${cwd} is not a git repository. Run \`git init\` there first.`);
+      }
+
+      const status = await gitOrThrow(cwd, ['status', '--porcelain'], undefined);
+      if (status.length === 0) {
+        return { ok: true, summary: 'Nothing to commit.', skipped: true };
+      }
+
+      const identity = await gitIdentity(cwd);
+      await gitOrThrow(cwd, ['add', '-A'], undefined);
+      const message =
+        typeof options.message === 'string' && options.message.trim().length > 0
+          ? options.message.trim()
+          : `chore(dsh): commit workspace at ${new Date().toISOString()}`;
+      await gitOrThrow(cwd, [...identity, 'commit', '-m', message], undefined);
+      const head = await gitOrThrow(cwd, ['rev-parse', '--short', 'HEAD'], undefined);
+      const summary = `Committed ${head} in ${cwd} (${trigger}).`;
+
+      record({ workspacePath: cwd, repo: `${binding.owner}/${binding.repo}`, branch: binding.branch, ok: true, trigger, message: summary });
+      log(summary);
+      return { ok: true, summary, commit: head };
+    } catch (error) {
+      const message = redact(error?.message ?? error);
+      record({ workspacePath: cwd, repo: `${binding.owner}/${binding.repo}`, branch: binding.branch, ok: false, trigger, message });
+      log(`commit failed: ${message}`);
+      return { ok: false, summary: message };
+    } finally {
+      committing.delete(cwd);
+    }
+  }
+
   /* ---------------- the push operation ---------------- */
 
   /** In-flight pushes keyed by workspace path, so a mirror never stacks up. */
@@ -686,6 +743,13 @@ export function apply(ctx, rawConfig) {
     return { ok: true, summary: `Unbound ${workspacePath}.` };
   }
 
+  async function commitNow(input) {
+    const workspacePath = workspacePathFrom(input);
+    const binding = bindingFor(workspacePath);
+    if (binding === undefined) throw new Error(`no repository is bound to ${workspacePath || 'this session'}`);
+    return commitBinding(binding, { trigger: input?.trigger === 'tool' ? 'tool' : 'manual', message: input?.message });
+  }
+
   async function pushNow(input) {
     const workspacePath = workspacePathFrom(input);
     const binding = bindingFor(workspacePath);
@@ -745,6 +809,7 @@ export function apply(ctx, rawConfig) {
     'repo.create': (params) => createRepo(params),
     'bind.set': (params) => bind(params),
     'bind.remove': (params) => unbind(params),
+    'commit.now': (params) => commitNow(params),
     'push.now': (params) => pushNow(params),
     activity: () => {
       load();
@@ -806,8 +871,8 @@ export function apply(ctx, rawConfig) {
           properties: {
             action: {
               type: 'string',
-              enum: ['status', 'push', 'bind', 'unbind', 'repos'],
-              description: 'status (default) reports the binding and account; push commits and pushes; bind/unbind change the binding; repos lists pushable repositories.',
+              enum: ['status', 'commit', 'push', 'bind', 'unbind', 'repos'],
+              description: 'status reports the binding and account; commit records local changes without pushing; push commits and pushes; bind/unbind change the binding; repos lists pushable repositories.',
             },
             workspace: {
               type: 'string',
@@ -864,6 +929,10 @@ export function apply(ctx, rawConfig) {
                 ? 'No pushable repositories found.'
                 : `Pushable repositories (${repos.length}): ${repos.slice(0, 30).map((row) => row.fullName).join(', ')}${repos.length > 30 ? ', …' : ''}`;
               return { ok: true, summary };
+            }
+            if (action === 'commit') {
+              const outcome = await commitNow({ workspace, trigger: 'tool', message: args?.message });
+              return { ok: outcome.ok === true, summary: outcome.summary };
             }
             if (action === 'push') {
               const outcome = await pushNow({ workspace, trigger: 'tool', message: args?.message });

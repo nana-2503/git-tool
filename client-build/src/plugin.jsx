@@ -93,8 +93,8 @@ const TOKEN_NEW_URL =
   "https://github.com/settings/tokens/new?scopes=repo,read:user&description=DSH%20GitHub%20Push"
 const DEVICE_URL = "https://github.com/login/device"
 
-/** Activity rows shown before the "show all" toggle. */
-const ACTIVITY_PAGE = 8
+/** Activity rows shown per page. */
+const ACTIVITY_PAGE = 10
 
 /* ======================================================================== */
 /* helpers                                                                  */
@@ -297,9 +297,9 @@ const zh = {
 
   activityCard: "推送记录",
   noActivity: "还没有推送记录。",
-  activityShown: "已显示 {shown} / {total} 条",
-  loadMore: "加载更多",
-  showLess: "收起",
+  activityPage: "第 {page} / {total} 页（{shown}-{end} / {totalItems} 条）",
+  prevPage: "上一页",
+  nextPage: "下一页",
   timeNow: "刚刚",
   timeMinutesAgo: "{n} 分钟前",
   timeHoursAgo: "{n} 小时前",
@@ -381,9 +381,9 @@ const en = {
 
   activityCard: "Push activity",
   noActivity: "No pushes yet.",
-  activityShown: "Showing {shown} of {total}",
-  loadMore: "Load more",
-  showLess: "Show less",
+  activityPage: "Page {page} / {total} ({shown}-{end} of {totalItems})",
+  prevPage: "Previous",
+  nextPage: "Next",
   timeNow: "just now",
   timeMinutesAgo: "{n} min ago",
   timeHoursAgo: "{n} h ago",
@@ -1091,13 +1091,21 @@ function BindingEditor({ t, workspace, binding, defaults, onChanged }) {
 /**
  * The push activity feed: one compact row per entry — status dot, repository
  * (or the trigger when no repository is known), the message, and a relative
- * timestamp. The history is paged: `ACTIVITY_PAGE` rows per page, "load more"
- * appends the next page, and a counter says how much of the log is shown.
+ * timestamp. The history is paged by fixed `ACTIVITY_PAGE` chunks, with
+ * prev/next buttons and a page counter.
  */
 function ActivityCard({ t, activity }) {
   const [page, setPage] = React.useState(1)
-  const shown = Math.min(page * ACTIVITY_PAGE, activity.length)
-  const visible = activity.slice(0, shown)
+  const totalPages = Math.max(1, Math.ceil(activity.length / ACTIVITY_PAGE))
+  const safePage = Math.min(page, totalPages)
+  const start = (safePage - 1) * ACTIVITY_PAGE + 1
+  const end = Math.min(safePage * ACTIVITY_PAGE, activity.length)
+  const visible = activity.slice((safePage - 1) * ACTIVITY_PAGE, safePage * ACTIVITY_PAGE)
+
+  React.useEffect(() => {
+    if (safePage !== page) setPage(safePage)
+  }, [safePage, page])
+
   return (
     <Card data-dsh-github-push data-gp-activity>
       <CardHeader>
@@ -1141,27 +1149,31 @@ function ActivityCard({ t, activity }) {
                 </Item>
               ))}
             </ItemGroup>
-            {activity.length > ACTIVITY_PAGE ? (
+            {totalPages > 1 ? (
               <div className="flex min-w-0 flex-wrap items-center justify-center gap-2">
                 <FieldDescription className="text-xs">
-                  {t("activityShown", { shown, total: activity.length })}
+                  {t("activityPage", { page: safePage, total: totalPages, shown: start, end, totalItems: activity.length })}
                 </FieldDescription>
-                {shown < activity.length ? (
-                  <Button
-                    variant="outline"
-                    size="xs"
-                    className="gp-fill"
-                    data-gp-load-more
-                    onClick={() => setPage((value) => value + 1)}
-                  >
-                    {t("loadMore")}
-                  </Button>
-                ) : null}
-                {page > 1 ? (
-                  <Button variant="ghost" size="xs" onClick={() => setPage(1)}>
-                    {t("showLess")}
-                  </Button>
-                ) : null}
+                <Button
+                  variant="outline"
+                  size="xs"
+                  className="gp-fill"
+                  data-gp-prev-page
+                  disabled={safePage <= 1}
+                  onClick={() => setPage((value) => Math.max(1, value - 1))}
+                >
+                  {t("prevPage")}
+                </Button>
+                <Button
+                  variant="outline"
+                  size="xs"
+                  className="gp-fill"
+                  data-gp-next-page
+                  disabled={safePage >= totalPages}
+                  onClick={() => setPage((value) => Math.min(totalPages, value + 1))}
+                >
+                  {t("nextPage")}
+                </Button>
               </div>
             ) : null}
           </>
@@ -1389,7 +1401,8 @@ const plugin = {
 
   /**
    * Inject the compiled stylesheet, register the dictionaries, the sidebar row,
-   * and the dialog it opens. Every resource is owned by `ctx.effect` /
+   * the dialog it opens, and the floating commit/push buttons above the
+   * composer input. Every resource is owned by `ctx.effect` /
    * `ctx.slots.inject`, so unloading removes all of them.
    */
   apply(ctx) {
@@ -1416,6 +1429,7 @@ const plugin = {
         <SettingsDialog {...props} ctx={ctx} />
       )),
     )
+
   },
 }
 
