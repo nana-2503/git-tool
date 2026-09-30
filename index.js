@@ -997,5 +997,20 @@ export function apply(ctx, rawConfig) {
     },
   });
 
+  const originalList = commands.list.bind(commands);
+  const zhDescriptions = {
+    push: '将当前工作区推送到已绑定的 GitHub 仓库。',
+  };
+  const patchedList = function (agent) {
+    return originalList(agent).map((descriptor) => {
+      const zh = zhDescriptions[descriptor.name];
+      return zh === undefined ? descriptor : Object.assign({}, descriptor, { description: zh });
+    });
+  };
+  commands.list = patchedList;
+  ctx.effect(() => () => {
+    if (commands.list === patchedList) commands.list = originalList;
+  }, 'github-push: restore commands.list');
+
   commands.notifyChange();
 }
