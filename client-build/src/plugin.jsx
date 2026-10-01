@@ -32,6 +32,9 @@ import css from "../dist/shadcn.css"
 import * as React from "react"
 import { ExternalLinkIcon, PlusIcon, RefreshCwIcon, XIcon } from "lucide-react"
 
+/** The Harness's own transient banner; seeded in the browser module table. */
+import { Toast } from "@deepseek-ai/dsh-client-ui-primitives"
+
 import { Alert, AlertDescription } from "../vendor/ui/alert"
 import { Badge } from "../vendor/ui/badge"
 import { Button } from "../vendor/ui/button"
@@ -289,6 +292,8 @@ const zh = {
   pushNow: "立即推送",
   cmdLabel: "推送",
   cmdDesc: "将当前工作区推送到已绑定的 GitHub 仓库。",
+  pushStarted: "开始推送…",
+  pushSucceeded: "推送完成。",
   autoPush: "会话 push 时自动同步",
   autoPushHint: "会话里执行 git push 后，自动推送到绑定仓库。",
   autoCommit: "推送前自动提交改动",
@@ -375,6 +380,8 @@ const en = {
   pushNow: "Push now",
   cmdLabel: "Push",
   cmdDesc: "Push the current workspace to its bound GitHub repository.",
+  pushStarted: "Push started…",
+  pushSucceeded: "Push finished.",
   autoPush: "Auto-sync when a session pushes",
   autoPushHint: "After `git push` in a session, push to the bound repository too.",
   autoCommit: "Commit local changes before pushing",
@@ -434,10 +441,38 @@ function createUiStore(initial) {
 
 const uiStore = createUiStore({ open: false, pushTick: 0 })
 
+/**
+ * One transient banner at a time (the Toast owns its own fade timer). `seq`
+ * keys the render so re-showing identical text restarts the slide-in/hold/fade
+ * cycle instead of being treated as the same mount.
+ */
+const toastStore = createUiStore({ seq: 0, message: null })
+
+/** Show a Harness-style top-center toast; pass `ok:false` for failures. */
+function showToast(text, ok = true) {
+  toastStore.set({ seq: toastStore.get().seq + 1, message: { text, ok } })
+}
+
 function useUiStore(store) {
   const [value, setValue] = React.useState(store.get)
   React.useEffect(() => store.subscribe(() => setValue(store.get())), [store])
   return value
+}
+
+/** Frame-wide host for the `/git-push` banners, mounted beside the dialog. */
+function ToastHost() {
+  const state = useUiStore(toastStore)
+  if (state.message === null) return null
+  const { text, ok } = state.message
+  return (
+    <Toast
+      key={state.seq}
+      text={text}
+      tone={ok ? "success" : undefined}
+      icon={ok ? undefined : <GitHubGlyph size={16} />}
+      onDone={() => toastStore.set({ message: null })}
+    />
+  )
 }
 
 /** Call one Host method over the authenticated document-relative route. */
@@ -1448,11 +1483,16 @@ const plugin = {
       )),
     )
 
-    // Frame-wide overlay: the dialog that row opens.
+    // Frame-wide overlay: the dialog that row opens, plus the toast host for
+    // the `/git-push` banners (it must live outside the dialog so a push from
+    // the menu still reports with the panel closed).
     ctx.slots.inject("shell.overlay", () =>
       ctx.slots.register({ name: "shell.overlay", id: "github-push", order: 50 }, (props) => (
         <SettingsDialog {...props} ctx={ctx} />
       )),
+    )
+    ctx.slots.inject("shell.overlay", () =>
+      ctx.slots.register({ name: "shell.overlay", id: "github-push-toast", order: 60 }, () => <ToastHost />),
     )
 
     // The `/git-push` slash-menu row. This is the client-command surface
@@ -1475,16 +1515,19 @@ const plugin = {
             ui: {
               kind: "action",
               run: (session) => {
-                // Silent push over the same RPC the dialog buttons use — no
-                // panel popup. If the settings panel happens to be open, the
-                // `pushTick` bump below re-reads the snapshot so the fresh
-                // activity row and last-push status land without a manual
-                // refresh.
+                // Push over the same RPC the dialog buttons use, with a
+                // Harness toast at each turn: one when it starts, one when it
+                // settles. No panel popup — but if the settings panel happens
+                // to be open, the `pushTick` bump re-reads the snapshot so the
+                // fresh activity row and last-push status land without a
+                // manual refresh.
+                showToast(t("pushStarted"))
                 void (async () => {
                   try {
-                    await callRpc("push.now", { sessionId: session.sessionId })
-                  } catch {
-                    /* the panel renders the failure in its activity feed */
+                    const outcome = await callRpc("push.now", { sessionId: session.sessionId })
+                    showToast(typeof outcome?.summary === "string" && outcome.summary !== "" ? outcome.summary : t("pushSucceeded"), true)
+                  } catch (failure) {
+                    showToast(String(failure?.message ?? failure), false)
                   } finally {
                     uiStore.set({ pushTick: uiStore.get().pushTick + 1 })
                   }

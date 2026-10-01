@@ -42,7 +42,7 @@ const result = await build({
   platform: 'browser',
   target: ['chrome120', 'firefox120', 'safari17'],
   jsx: 'automatic',
-  external: ['react', 'react-dom', 'react/jsx-runtime', 'react-dom/client'],
+  external: ['react', 'react-dom', 'react/jsx-runtime', 'react-dom/client', '@deepseek-ai/dsh-client-ui-primitives'],
   loader: { '.css': 'text' },
   define: { 'process.env.NODE_ENV': '"production"' },
   minify: true,
