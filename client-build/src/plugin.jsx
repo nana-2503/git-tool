@@ -1475,11 +1475,11 @@ const plugin = {
             ui: {
               kind: "action",
               run: (session) => {
-                // Show the panel immediately, then push the session's workspace
-                // over the same RPC the dialog buttons use. Bumping `pushTick`
-                // once it settles re-reads the snapshot, so the result lands in
-                // the activity feed without a manual refresh.
-                uiStore.set({ open: true })
+                // Silent push over the same RPC the dialog buttons use — no
+                // panel popup. If the settings panel happens to be open, the
+                // `pushTick` bump below re-reads the snapshot so the fresh
+                // activity row and last-push status land without a manual
+                // refresh.
                 void (async () => {
                   try {
                     await callRpc("push.now", { sessionId: session.sessionId })
