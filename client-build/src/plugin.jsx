@@ -179,11 +179,12 @@ function triggerLabel(t, trigger) {
 /**
  * The GitHub mark. lucide carries no brand icons, so this is the canonical
  * octocat path in its own 16x16 box (optically centred), drawn at the size the
- * Harness uses for sidebar glyphs.
+ * Harness uses for sidebar glyphs. Shaped like the Harness's own icon set
+ * (`IconProps`: `size` + `className`) so the `/git-push` menu row can reuse it.
  */
-function GitHubGlyph({ size = 16 }) {
+function GitHubGlyph({ size = 16, className }) {
   return (
-    <svg viewBox="0 0 16 16" width={size} height={size} fill="currentColor" focusable="false" aria-hidden>
+    <svg viewBox="0 0 16 16" width={size} height={size} className={className} fill="currentColor" focusable="false" aria-hidden>
       <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z" />
     </svg>
   )
@@ -286,6 +287,8 @@ const zh = {
   save: "保存",
   unbind: "解绑",
   pushNow: "立即推送",
+  cmdLabel: "推送",
+  cmdDesc: "将当前工作区推送到已绑定的 GitHub 仓库。",
   autoPush: "会话 push 时自动同步",
   autoPushHint: "会话里执行 git push 后，自动推送到绑定仓库。",
   autoCommit: "推送前自动提交改动",
@@ -370,6 +373,8 @@ const en = {
   save: "Save",
   unbind: "Unbind",
   pushNow: "Push now",
+  cmdLabel: "Push",
+  cmdDesc: "Push the current workspace to its bound GitHub repository.",
   autoPush: "Auto-sync when a session pushes",
   autoPushHint: "After `git push` in a session, push to the bound repository too.",
   autoCommit: "Commit local changes before pushing",
@@ -427,7 +432,7 @@ function createUiStore(initial) {
   }
 }
 
-const uiStore = createUiStore({ open: false })
+const uiStore = createUiStore({ open: false, pushTick: 0 })
 
 function useUiStore(store) {
   const [value, setValue] = React.useState(store.get)
@@ -1255,6 +1260,17 @@ function SettingsDialog({ ctx }) {
   const state = useUiStore(uiStore)
   const [snapshot, refresh, refreshing] = useStatus(ctx, undefined)
 
+  // The `/git-push` menu row runs the push outside this dialog; when it
+  // settles it bumps `pushTick`, and the panel re-reads the snapshot so the
+  // fresh activity row and last-push status are on screen without a manual
+  // refresh.
+  const seenPushTick = React.useRef(state.pushTick)
+  React.useEffect(() => {
+    if (state.pushTick === seenPushTick.current) return
+    seenPushTick.current = state.pushTick
+    void refresh()
+  }, [state.pushTick, refresh])
+
   const data = snapshot.data
   const bindings = data?.bindings ?? []
   const bindingsByPath = React.useMemo(() => {
@@ -1416,6 +1432,15 @@ const plugin = {
 
     ctx.effect(() => ctx.locale.register(NS, { zh, en }), "github-push: dictionaries")
 
+    /** Translator for the non-React surfaces (the `/git-push` menu row copy). */
+    const t = (() => {
+      try {
+        return ctx.locale.bind(NS)
+      } catch {
+        return (key) => key
+      }
+    })()
+
     // Sidebar foot: its own full-width row directly above the Settings seat.
     ctx.slots.inject("sidebar.footer.action", () =>
       ctx.slots.register({ name: "sidebar.footer.action", id: "github-push", order: 40 }, (props) => (
@@ -1429,6 +1454,47 @@ const plugin = {
         <SettingsDialog {...props} ctx={ctx} />
       )),
     )
+
+    // The `/git-push` slash-menu row. This is the client-command surface
+    // (`ctx.commandUi`), not a Host command: it is client-owned, so the menu
+    // renders its own localized title ("推送") and the GitHub glyph, and the
+    // invocation never enters the message history. A contribution colliding by
+    // name with a Host command fails loud, hence the distinct `git-push` name.
+    ctx.inject(["commandUi"], (commandCtx) => {
+      const commandUi = commandCtx.get("commandUi")
+      if (commandUi === undefined || typeof commandUi.register !== "function") return
+
+      commandCtx.effect(
+        () =>
+          commandUi.register({
+            name: "git-push",
+            label: () => t("cmdLabel"),
+            description: () => t("cmdDesc"),
+            icon: GitHubGlyph,
+            available: () => true,
+            ui: {
+              kind: "action",
+              run: (session) => {
+                // Show the panel immediately, then push the session's workspace
+                // over the same RPC the dialog buttons use. Bumping `pushTick`
+                // once it settles re-reads the snapshot, so the result lands in
+                // the activity feed without a manual refresh.
+                uiStore.set({ open: true })
+                void (async () => {
+                  try {
+                    await callRpc("push.now", { sessionId: session.sessionId })
+                  } catch {
+                    /* the panel renders the failure in its activity feed */
+                  } finally {
+                    uiStore.set({ pushTick: uiStore.get().pushTick + 1 })
+                  }
+                })()
+              },
+            },
+          }),
+        "github-push: /git-push menu row",
+      )
+    })
 
   },
 }

@@ -21,7 +21,7 @@ import { dirname, join } from 'node:path';
 export const name = 'github-push';
 
 /** Hard dependencies: tool registry, RPC carrier, secret store, workspace registry. */
-export const inject = ['tools', 'connection', 'credentials', 'workspaceRegistry', 'commands'];
+export const inject = ['tools', 'connection', 'credentials', 'workspaceRegistry'];
 
 /** Exact Fetch route the Client half posts to (inside Connection's `/api` fence). */
 const ROUTE_PATH = '/api/github-push.rpc';
@@ -972,45 +972,4 @@ export function apply(ctx, rawConfig) {
       }),
     'github-push: session push mirror',
   );
-
-  /* ---------------- slash command ---------------- */
-
-  const commands = ctx.commands;
-  const register = (definition) => ctx.effect(() => commands.register(definition), `github-push: /${definition.name}`);
-
-  register({
-    name: 'push',
-    description: 'Push the current workspace to its bound GitHub repository.',
-    input: { hint: '[workspace]' },
-    handler: async (invocation) => {
-      const rawInput = typeof invocation?.rawInput === 'string' ? invocation.rawInput.trim() : '';
-      const workspace = rawInput || normalizePath(invocation?.agent?.session?.header?.cwd);
-      const binding = bindingFor(workspace);
-      if (binding === undefined) {
-        return { kind: 'error', text: `No repository is bound to ${workspace || 'this session'}.` };
-      }
-      const outcome = await pushNow({ workspace, trigger: 'command', message: invocation?.rawInput });
-      if (outcome.ok) {
-        return { kind: 'success', text: outcome.summary };
-      }
-      return { kind: 'error', text: outcome.summary };
-    },
-  });
-
-  const originalList = commands.list.bind(commands);
-  const zhDescriptions = {
-    push: '将当前工作区推送到已绑定的 GitHub 仓库。',
-  };
-  const patchedList = function (agent) {
-    return originalList(agent).map((descriptor) => {
-      const zh = zhDescriptions[descriptor.name];
-      return zh === undefined ? descriptor : Object.assign({}, descriptor, { description: zh });
-    });
-  };
-  commands.list = patchedList;
-  ctx.effect(() => () => {
-    if (commands.list === patchedList) commands.list = originalList;
-  }, 'github-push: restore commands.list');
-
-  commands.notifyChange();
 }
