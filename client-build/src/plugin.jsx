@@ -308,6 +308,8 @@ const zh = {
   pushing: "推送中…",
 
   activityCard: "推送记录",
+  activityTabPush: "推送",
+  activityTabCi: "CI",
   noActivity: "还没有推送记录。",
   activityPage: "第 {page} / {total} 页（{shown}-{end} / {totalItems} 条）",
   prevPage: "上一页",
@@ -399,6 +401,8 @@ const en = {
   pushing: "Pushing…",
 
   activityCard: "Push activity",
+  activityTabPush: "Pushes",
+  activityTabCi: "CI",
   noActivity: "No pushes yet.",
   activityPage: "Page {page} / {total} ({shown}-{end} of {totalItems})",
   prevPage: "Previous",
@@ -1180,18 +1184,32 @@ function BindingEditor({ t, workspace, binding, defaults, onChanged }) {
 }
 
 /**
- * The push activity feed: one compact row per entry — status dot, repository
- * (or the trigger when no repository is known), the message, and a relative
- * timestamp. The history is paged by fixed `ACTIVITY_PAGE` chunks, with
- * prev/next buttons and a page counter.
+ * The workspace activity feed, split into two tabs: pushes (every record that
+ * is not a CI verdict) and CI checks. Rows are scoped to the selected
+ * workspace — a record without a `workspacePath` (login, repo-create) belongs
+ * to no workspace and shows in neither tab. Each tab pages independently by
+ * fixed `ACTIVITY_PAGE` chunks, with prev/next buttons and a page counter.
  */
-function ActivityCard({ t, activity }) {
+const ACTIVITY_TABS = [
+  { key: "push", labelKey: "activityTabPush", match: (entry) => entry.trigger !== "ci" },
+  { key: "ci", labelKey: "activityTabCi", match: (entry) => entry.trigger === "ci" },
+]
+
+function ActivityCard({ t, activity, workspacePath }) {
+  const [tab, setTab] = React.useState("push")
   const [page, setPage] = React.useState(1)
-  const totalPages = Math.max(1, Math.ceil(activity.length / ACTIVITY_PAGE))
+
+  // A different workspace or tab restarts paging at the first page.
+  React.useEffect(() => {
+    setPage(1)
+  }, [workspacePath, tab])
+
+  const rows = activity.filter((entry) => entry.workspacePath === workspacePath && ACTIVITY_TABS.find((x) => x.key === tab).match(entry))
+  const totalPages = Math.max(1, Math.ceil(rows.length / ACTIVITY_PAGE))
   const safePage = Math.min(page, totalPages)
   const start = (safePage - 1) * ACTIVITY_PAGE + 1
-  const end = Math.min(safePage * ACTIVITY_PAGE, activity.length)
-  const visible = activity.slice((safePage - 1) * ACTIVITY_PAGE, safePage * ACTIVITY_PAGE)
+  const end = Math.min(safePage * ACTIVITY_PAGE, rows.length)
+  const visible = rows.slice((safePage - 1) * ACTIVITY_PAGE, safePage * ACTIVITY_PAGE)
 
   React.useEffect(() => {
     if (safePage !== page) setPage(safePage)
@@ -1202,11 +1220,28 @@ function ActivityCard({ t, activity }) {
       <CardHeader>
         <CardTitle>{t("activityCard")}</CardTitle>
         <CardAction>
-          {activity.length > 0 ? <Badge variant="secondary">{activity.length}</Badge> : null}
+          {/* Segmented tab strip: one button per feed, active row filled. */}
+          <div role="tablist" className="inline-flex items-center gap-0.5 rounded-md border border-border p-0.5">
+            {ACTIVITY_TABS.map((item) => (
+              <button
+                key={item.key}
+                type="button"
+                role="tab"
+                aria-selected={tab === item.key}
+                data-gp-tab={item.key}
+                className={`rounded-[calc(var(--radius-md)-2px)] px-2 py-0.5 text-xs transition-colors ${
+                  tab === item.key ? "bg-muted font-medium text-foreground" : "text-muted-foreground hover:text-foreground"
+                }`}
+                onClick={() => setTab(item.key)}
+              >
+                {t(item.labelKey)}
+              </button>
+            ))}
+          </div>
         </CardAction>
       </CardHeader>
       <CardContent className="gap-2">
-        {activity.length === 0 ? (
+        {rows.length === 0 ? (
           <Empty className="border border-dashed">
             <EmptyHeader>
               <EmptyMedia variant="icon">
@@ -1240,33 +1275,31 @@ function ActivityCard({ t, activity }) {
                 </Item>
               ))}
             </ItemGroup>
-            {activity.length > 0 ? (
-              <div className="flex min-w-0 flex-wrap items-center justify-center gap-2">
-                <FieldDescription className="text-xs">
-                  {t("activityPage", { page: safePage, total: totalPages, shown: start, end, totalItems: activity.length })}
-                </FieldDescription>
-                <Button
-                  variant="outline"
-                  size="xs"
-                  className="gp-fill"
-                  data-gp-prev-page
-                  disabled={safePage <= 1}
-                  onClick={() => setPage((value) => Math.max(1, value - 1))}
-                >
-                  {t("prevPage")}
-                </Button>
-                <Button
-                  variant="outline"
-                  size="xs"
-                  className="gp-fill"
-                  data-gp-next-page
-                  disabled={safePage >= totalPages}
-                  onClick={() => setPage((value) => Math.min(totalPages, value + 1))}
-                >
-                  {t("nextPage")}
-                </Button>
-              </div>
-            ) : null}
+            <div className="flex min-w-0 flex-wrap items-center justify-center gap-2">
+              <FieldDescription className="text-xs">
+                {t("activityPage", { page: safePage, total: totalPages, shown: start, end, totalItems: rows.length })}
+              </FieldDescription>
+              <Button
+                variant="outline"
+                size="xs"
+                className="gp-fill"
+                data-gp-prev-page
+                disabled={safePage <= 1}
+                onClick={() => setPage((value) => Math.max(1, value - 1))}
+              >
+                {t("prevPage")}
+              </Button>
+              <Button
+                variant="outline"
+                size="xs"
+                className="gp-fill"
+                data-gp-next-page
+                disabled={safePage >= totalPages}
+                onClick={() => setPage((value) => Math.min(totalPages, value + 1))}
+              >
+                {t("nextPage")}
+              </Button>
+            </div>
           </>
         )}
       </CardContent>
@@ -1476,7 +1509,7 @@ function SettingsDialog({ ctx }) {
                       onChanged={refresh}
                     />
                   )}
-                  <ActivityCard t={t} activity={activity} />
+                  <ActivityCard t={t} activity={activity} workspacePath={selected ?? ""} />
                 </div>
               </div>
 
