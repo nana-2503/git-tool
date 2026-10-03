@@ -532,12 +532,21 @@ export function apply(ctx, rawConfig) {
         branch = head.ok && head.stdout !== '' ? head.stdout : 'main';
       }
 
-      // 4. Push HEAD into that branch. A forced push uses `--force-with-lease`,
-      // which overwrites a non-fast-forward history but still refuses when the
-      // remote moved outside this client's view — unlike bare `--force`, it
-      // cannot silently clobber someone else's fresh commits.
+      // 4. Push HEAD into that branch. A forced push uses `--force-with-lease`
+      // with an explicit expected value read fresh from the remote: because we
+      // push by URL (no remote-tracking ref exists), a bare lease would always
+      // see "stale info" and refuse. Naming the observed remote SHA makes the
+      // lease actually work — it overwrites a non-fast-forward history but
+      // still refuses if the remote moved between this check and the push, so
+      // it cannot silently clobber someone else's fresh commits.
       const forced = options.force === true;
-      const pushed = await git(cwd, ['push', ...(forced ? ['--force-with-lease'] : []), url, `HEAD:refs/heads/${branch}`], token);
+      let forceArgs = [];
+      if (forced) {
+        const probe = await git(cwd, ['ls-remote', url, `refs/heads/${branch}`], token);
+        const expected = probe.ok ? String(probe.stdout ?? '').trim().split(/\s+/)[0] || '' : '';
+        forceArgs = ['--force-with-lease=refs/heads/' + branch + ':' + (expected || '')];
+      }
+      const pushed = await git(cwd, ['push', ...forceArgs, url, `HEAD:refs/heads/${branch}`], token);
       if (!pushed.ok) throw new Error(pushHint(pushed.stderr || pushed.message, { ...binding, branch }));
       const head = await git(cwd, ['rev-parse', '--short', 'HEAD']);
       const summary = `${forced ? 'Force-pushed' : 'Pushed'} ${binding.owner}/${binding.repo}#${branch} (${head.ok ? head.stdout : 'unknown'})${

@@ -111,24 +111,38 @@ assert.match(rejected.value.summary, /non-fast-forward|fetch first|\[rejected\]/
 
 /* ---------------------------- force push -------------------------------- */
 
-// A force push overwrites the divergent remote history and reports as forced.
-const forced = await call('push.now', { workspace: ws, force: true });
-assert.equal(forced.value.ok, true, `force push failed: ${forced.value.summary}`);
-assert.match(forced.value.summary, /^Force-pushed /, forced.value.summary);
-assert.equal(git(remotePath, ['show', 'main:d.txt']), 'local side', 'forced commit reached the remote');
-assert.throws(() => git(remotePath, ['show', 'main:c.txt']), /c\.txt/, 'the remote-only commit was overwritten');
+// Isolated repo so this does not disturb the shared ws <-> remote divergence
+// the later mirror test depends on. Diverge the remote, then force over it.
+const wsf = join(root, 'wsf');
+execFileSync('git', ['init', '-b', 'main', wsf]);
+execFileSync('git', ['init', '--bare', '-b', 'main', join(base, 'octocat', 'forced.git')]);
+ctx.workspaceRegistry.list = () => [
+  { id: 'ws-1', path: ws, title: 'ws', sessionIds: [] },
+  { id: 'ws-f', path: wsf, title: 'wsf', sessionIds: [] },
+];
+await call('bind.set', { workspace: wsf, owner: 'octocat', repo: 'forced', branch: 'main', autoCommit: true });
+writeFileSync(join(wsf, 'a.txt'), 'base\n');
+const fBase = await call('push.now', { workspace: wsf });
+assert.equal(fBase.value.ok, true, `force-test baseline push failed: ${fBase.value.summary}`);
 
-// `--force-with-lease` still refuses when the remote moved outside this
-// client's view: another clone pushes while our lease ref is stale.
-execFileSync('git', ['clone', remotePath, join(root, 'third')]);
-writeFileSync(join(root, 'third', 'e.txt'), 'surprise\n');
-git(join(root, 'third'), ['add', '-A']);
-git(join(root, 'third'), ['commit', '-m', 'surprise']);
-git(join(root, 'third'), ['push', 'origin', 'main']);
-// Advance local too, so the only reason to reject is the unseen remote move.
-writeFileSync(join(ws, 'f.txt'), 'more local\n');
-const refused = await call('push.now', { workspace: ws, force: true });
-assert.equal(refused.value.ok, false, 'a stale-lease force push must be refused, not silently clobber');
+// Another clone advances the remote, so wsf's next plain push cannot fast-forward.
+const rival = join(root, 'rival');
+execFileSync('git', ['clone', join(base, 'octocat', 'forced.git'), rival]);
+writeFileSync(join(rival, 'r.txt'), 'rival\n');
+git(rival, ['add', '-A']);
+git(rival, ['commit', '-m', 'rival']);
+git(rival, ['push', 'origin', 'main']);
+writeFileSync(join(wsf, 'l.txt'), 'local\n');
+const fRejected = await call('push.now', { workspace: wsf });
+assert.equal(fRejected.value.ok, false, 'divergent push must fail before forcing');
+
+// A force push overwrites the divergent remote history and reports as forced.
+const fForced = await call('push.now', { workspace: wsf, force: true });
+assert.equal(fForced.value.ok, true, `force push failed: ${fForced.value.summary}`);
+assert.match(fForced.value.summary, /^Force-pushed /, fForced.value.summary);
+const forcedRemote = join(base, 'octocat', 'forced.git');
+assert.equal(git(forcedRemote, ['show', 'main:l.txt']), 'local', 'forced commit reached the remote');
+assert.throws(() => git(forcedRemote, ['show', 'main:r.txt']), /r\.txt/, 'the rival-only commit was overwritten');
 
 /* ------------------------- credential redaction ------------------------- */
 
