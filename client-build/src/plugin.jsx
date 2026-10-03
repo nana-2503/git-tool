@@ -168,6 +168,7 @@ const TRIGGER_KEYS = {
   login: "triggerLogin",
   logout: "triggerLogout",
   "repo-create": "triggerRepoCreate",
+  ci: "triggerCi",
 }
 
 /** Translate an activity trigger, falling back to the raw value. */
@@ -294,6 +295,9 @@ const zh = {
   cmdDesc: "将当前工作区推送到已绑定的 GitHub 仓库。",
   pushStarted: "开始推送…",
   pushSucceeded: "推送完成。",
+  ciPassed: "CI 全部通过 ✅",
+  ciFailed: "CI 未通过：{list}",
+  triggerCi: "CI 检查",
   autoPush: "会话 push 时自动同步",
   autoPushHint: "会话里执行 git push 后，自动推送到绑定仓库。",
   autoCommit: "推送前自动提交改动",
@@ -382,6 +386,9 @@ const en = {
   cmdDesc: "Push the current workspace to its bound GitHub repository.",
   pushStarted: "Push started…",
   pushSucceeded: "Push finished.",
+  ciPassed: "CI passed ✅",
+  ciFailed: "CI failed: {list}",
+  triggerCi: "CI check",
   autoPush: "Auto-sync when a session pushes",
   autoPushHint: "After `git push` in a session, push to the bound repository too.",
   autoCommit: "Commit local changes before pushing",
@@ -486,6 +493,50 @@ async function callRpc(method, params) {
   const payload = await response.json()
   if (payload?.ok !== true) throw new Error(String(payload?.error?.message ?? "Host call failed"))
   return payload.value
+}
+
+/* ------------------------------------------------------------------ */
+/* CI watch — poll one pushed commit's checks until they settle        */
+/* ------------------------------------------------------------------ */
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+
+/** Generation guard: a newer `/git-push` retires any older watch loop. */
+let ciGeneration = 0
+
+/**
+ * Poll `ci.status` for the session's HEAD commit until it settles, then raise
+ * the verdict as a toast and append it to the activity feed via `ci.log`.
+ * Silent by design while checks are still queued or running; a repo with no
+ * CI at all stays silent forever (`pending` past its grace window). Any error
+ * ends the watch quietly — the push itself already reported.
+ */
+async function watchCi(t, sessionId) {
+  const generation = (ciGeneration += 1)
+  const startedAt = Date.now()
+  let sawChecks = false
+  try {
+    await sleep(5_000)
+    while (Date.now() - startedAt < 300_000) {
+      if (generation !== ciGeneration) return
+      const status = await callRpc("ci.status", { sessionId })
+      const state = String(status?.state ?? "")
+      if (state === "success" || state === "failure") {
+        const list = state === "failure" ? status.failed ?? [] : status.passed ?? []
+        const message = state === "success" ? "CI passed." : `CI failed: ${list.join(", ")}`
+        await callRpc("ci.log", { sessionId, ok: state === "success", message }).catch(() => {})
+        showToast(state === "success" ? t("ciPassed") : t("ciFailed", { list: list.slice(0, 3).join(", ") }), state === "success")
+        uiStore.set({ pushTick: uiStore.get().pushTick + 1 })
+        return
+      }
+      if (state === "running") sawChecks = true
+      else if (state === "pending" && sawChecks === false && Date.now() - startedAt > 60_000) return
+      else if (state === "unknown") return
+      await sleep(5_000)
+    }
+  } catch {
+    /* a failing poll ends the watch; the panel refresh button re-reads anyway */
+  }
 }
 
 /** Read the plugin snapshot, optionally scoped to one session. */
@@ -1517,15 +1568,17 @@ const plugin = {
               run: (session) => {
                 // Push over the same RPC the dialog buttons use, with a
                 // Harness toast at each turn: one when it starts, one when it
-                // settles. No panel popup — but if the settings panel happens
-                // to be open, the `pushTick` bump re-reads the snapshot so the
-                // fresh activity row and last-push status land without a
-                // manual refresh.
+                // settles. A successful push then hands off to `watchCi`,
+                // which polls the pushed commit's checks and reports the
+                // verdict when it lands. No panel popup — but if the settings
+                // panel happens to be open, the `pushTick` bumps re-read the
+                // snapshot so fresh rows land without a manual refresh.
                 showToast(t("pushStarted"))
                 void (async () => {
                   try {
                     const outcome = await callRpc("push.now", { sessionId: session.sessionId })
                     showToast(typeof outcome?.summary === "string" && outcome.summary !== "" ? outcome.summary : t("pushSucceeded"), true)
+                    void watchCi(t, session.sessionId)
                   } catch (failure) {
                     showToast(String(failure?.message ?? failure), false)
                   } finally {

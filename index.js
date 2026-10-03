@@ -757,6 +757,57 @@ export function apply(ctx, rawConfig) {
     return pushBinding(binding, { trigger: input?.trigger === 'tool' ? 'tool' : 'manual', message: input?.message });
   }
 
+  /* ---------------- CI verification ---------------- */
+
+  /**
+   * The check-run roll-up for the workspace's current HEAD commit. One poll per
+   * call; the Client half drives the retry loop so a settling run can raise its
+   * own toast and activity row without holding anything open here.
+   */
+  async function ciStatus(input) {
+    const workspacePath = workspacePathFrom(input);
+    const binding = bindingFor(workspacePath);
+    if (binding === undefined) throw new Error(`no repository is bound to ${workspacePath || 'this session'}`);
+    const { token } = await requireToken();
+    const head = await git(binding.workspacePath, ['rev-parse', 'HEAD'], token);
+    if (!head.ok || head.stdout === '') return { state: 'unknown', message: head.stderr || head.message };
+    const sha = head.stdout;
+    let runs;
+    try {
+      const page = await api(`/repos/${binding.owner}/${binding.repo}/commits/${sha}/check-runs?per_page=100`, { token });
+      runs = Array.isArray(page?.check_runs) ? page.check_runs : [];
+    } catch (error) {
+      return { state: 'unknown', message: redact(error?.message ?? error) };
+    }
+    const actionsUrl = `${String(config.gitBase ?? DEFAULTS.gitBase).replace(/\/+$/, '')}/${binding.owner}/${binding.repo}/actions`;
+    if (runs.length === 0) return { state: 'pending', sha, branch: binding.branch };
+    const stillOpen = runs.filter((run) => run.status !== 'completed');
+    if (stillOpen.length > 0) return { state: 'running', sha, branch: binding.branch, pending: stillOpen.map((run) => String(run.name ?? 'check')) };
+    const failed = runs.filter((run) => ['failure', 'cancelled', 'timed_out', 'action_required'].includes(String(run.conclusion ?? '')));
+    if (failed.length > 0) {
+      return {
+        state: 'failure',
+        sha,
+        branch: binding.branch,
+        failed: failed.map((run) => String(run.name ?? 'check')),
+        url: String(failed[0]?.html_url ?? actionsUrl),
+      };
+    }
+    return { state: 'success', sha, branch: binding.branch, passed: runs.map((run) => String(run.name ?? 'check')), url: actionsUrl };
+  }
+
+  /** Append one settled CI verdict to the activity feed. */
+  function ciLog(input) {
+    const workspacePath = workspacePathFrom(input);
+    const binding = bindingFor(workspacePath);
+    if (binding === undefined) throw new Error(`no repository is bound to ${workspacePath || 'this session'}`);
+    const ok = input?.ok === true;
+    const message = String(input?.message ?? '').trim() || `CI ${ok ? 'passed' : 'failed'}.`;
+    record({ workspacePath: binding.workspacePath, repo: `${binding.owner}/${binding.repo}`, branch: binding.branch, ok, trigger: 'ci', message });
+    log(message);
+    return { ok: true, summary: message };
+  }
+
   async function listRepos(input) {
     const { token } = await requireToken();
     const query = String(input?.query ?? '').trim().toLowerCase();
@@ -811,6 +862,8 @@ export function apply(ctx, rawConfig) {
     'bind.remove': (params) => unbind(params),
     'commit.now': (params) => commitNow(params),
     'push.now': (params) => pushNow(params),
+    'ci.status': (params) => ciStatus(params),
+    'ci.log': (params) => ciLog(params),
     activity: () => {
       load();
       return state.activity.slice(0, ACTIVITY_LIMIT);
