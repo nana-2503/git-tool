@@ -46,6 +46,14 @@ Token 通过 `ctx.credentials` 存储在引用 `GITHUB_PUSH_TOKEN` 下。
 
 推送执行的是 `git push <https url> HEAD:refs/heads/<branch>`。Token 不会出现在 `argv` 里：它通过一次性 `GIT_CONFIG_*` `http.extraHeader` 环境变量传递，并且所有日志信息都会抹掉 token 格式的文本。
 
+### 强制推送（二次确认）
+
+绑定编辑器里有 **强制推送** 按钮，用于覆盖非快进的远端历史。它是破坏性操作，所以需要两步确认：先弹出确认对话框，再勾选「我已了解风险」才会点亮最终按钮。底层使用 `--force-with-lease`，并在推送前先读取远端当前 SHA —— 因此如果在检查与推送之间远端又前进了，它会拒绝而不是悄悄覆盖协作者的新提交。`/git-push` 斜杠命令永远不会强推；强推只能从面板显式发起。
+
+### 推送后验证 CI
+
+推送成功后（无论来自面板还是 `/git-push`），会在后台轮询该提交的 GitHub check-runs。出结果后用 Harness Toast 报告通过/失败，并写入该工作区活动流的 **CI** 标签页。仍在运行的检查保持安静；完全没有 CI 的仓库会在宽限期后静默结束。
+
 绑定数据和推送日志都保存在 `$DSH_HOME/github-push.json`。
 
 ## Row 配置

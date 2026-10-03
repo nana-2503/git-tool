@@ -59,6 +59,22 @@ Push runs `git push <https url> HEAD:refs/heads/<branch>`. The token never reach
 it travels as a one-shot `GIT_CONFIG_*` `http.extraHeader` environment variable, and every
 message is scrubbed of token-shaped text.
 
+### Force push (double-confirmed)
+
+The binding editor has a **Force push** button that overwrites a non-fast-forward remote
+history. It is destructive, so it takes two steps: the confirmation dialog, then an
+"understand the risk" checkbox that gates the final button. Under the hood it pushes with
+`--force-with-lease`, reading the remote's current SHA first — so it still refuses if the
+remote moved between that check and the push, rather than silently clobbering a collaborator's
+fresh commits. The `/git-push` slash command never forces; force is only ever explicit from the panel.
+
+### CI verification after push
+
+A successful push (from the panel or `/git-push`) starts a background poll of the pushed
+commit's GitHub check-runs. When they settle, a Harness toast reports pass/fail and the result
+is appended to the workspace's activity feed (the **CI** tab). Checks that are still running stay
+silent, and a repository with no CI at all ends quietly after a grace window.
+
 Bindings and the push log live in `$DSH_HOME/github-push.json`.
 
 ## Row config

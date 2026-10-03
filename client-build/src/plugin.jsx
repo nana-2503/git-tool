@@ -1510,7 +1510,7 @@ function SettingsDialog({ ctx }) {
           <DialogTitle className="text-base font-semibold">
             {t("title")}
             <span className="ml-1.5 align-middle text-xs font-normal text-muted-foreground tabular-nums">
-              v1.2.2
+              v1.3.0
             </span>
           </DialogTitle>
           <DialogDescription className="text-xs leading-4">{t("subtitle")}</DialogDescription>
