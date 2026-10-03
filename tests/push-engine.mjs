@@ -109,6 +109,27 @@ assert.equal(rejected.value.ok, false, 'divergent push must fail');
 assert.match(rejected.value.summary, /already has commits this workspace does not/, rejected.value.summary);
 assert.match(rejected.value.summary, /non-fast-forward|fetch first|\[rejected\]/i);
 
+/* ---------------------------- force push -------------------------------- */
+
+// A force push overwrites the divergent remote history and reports as forced.
+const forced = await call('push.now', { workspace: ws, force: true });
+assert.equal(forced.value.ok, true, `force push failed: ${forced.value.summary}`);
+assert.match(forced.value.summary, /^Force-pushed /, forced.value.summary);
+assert.equal(git(remotePath, ['show', 'main:d.txt']), 'local side', 'forced commit reached the remote');
+assert.throws(() => git(remotePath, ['show', 'main:c.txt']), /c\.txt/, 'the remote-only commit was overwritten');
+
+// `--force-with-lease` still refuses when the remote moved outside this
+// client's view: another clone pushes while our lease ref is stale.
+execFileSync('git', ['clone', remotePath, join(root, 'third')]);
+writeFileSync(join(root, 'third', 'e.txt'), 'surprise\n');
+git(join(root, 'third'), ['add', '-A']);
+git(join(root, 'third'), ['commit', '-m', 'surprise']);
+git(join(root, 'third'), ['push', 'origin', 'main']);
+// Advance local too, so the only reason to reject is the unseen remote move.
+writeFileSync(join(ws, 'f.txt'), 'more local\n');
+const refused = await call('push.now', { workspace: ws, force: true });
+assert.equal(refused.value.ok, false, 'a stale-lease force push must be refused, not silently clobber');
+
 /* ------------------------- credential redaction ------------------------- */
 
 const tokenInText = first.value.summary.includes('ghp_testtoken');

@@ -532,11 +532,15 @@ export function apply(ctx, rawConfig) {
         branch = head.ok && head.stdout !== '' ? head.stdout : 'main';
       }
 
-      // 4. Push HEAD into that branch.
-      const pushed = await git(cwd, ['push', url, `HEAD:refs/heads/${branch}`], token);
+      // 4. Push HEAD into that branch. A forced push uses `--force-with-lease`,
+      // which overwrites a non-fast-forward history but still refuses when the
+      // remote moved outside this client's view — unlike bare `--force`, it
+      // cannot silently clobber someone else's fresh commits.
+      const forced = options.force === true;
+      const pushed = await git(cwd, ['push', ...(forced ? ['--force-with-lease'] : []), url, `HEAD:refs/heads/${branch}`], token);
       if (!pushed.ok) throw new Error(pushHint(pushed.stderr || pushed.message, { ...binding, branch }));
       const head = await git(cwd, ['rev-parse', '--short', 'HEAD']);
-      const summary = `Pushed ${binding.owner}/${binding.repo}#${branch} (${head.ok ? head.stdout : 'unknown'})${
+      const summary = `${forced ? 'Force-pushed' : 'Pushed'} ${binding.owner}/${binding.repo}#${branch} (${head.ok ? head.stdout : 'unknown'})${
         notes.length > 0 ? ` — ${notes.join(', ')}` : ''
       } via ${source}.`;
 
@@ -754,7 +758,7 @@ export function apply(ctx, rawConfig) {
     const workspacePath = workspacePathFrom(input);
     const binding = bindingFor(workspacePath);
     if (binding === undefined) throw new Error(`no repository is bound to ${workspacePath || 'this session'}`);
-    return pushBinding(binding, { trigger: input?.trigger === 'tool' ? 'tool' : 'manual', message: input?.message });
+    return pushBinding(binding, { trigger: input?.trigger === 'tool' ? 'tool' : 'manual', message: input?.message, force: input?.force === true });
   }
 
   /* ---------------- CI verification ---------------- */

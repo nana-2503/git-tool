@@ -52,6 +52,7 @@ import {
   DialogClose,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "../vendor/ui/dialog"
@@ -291,6 +292,11 @@ const zh = {
   save: "保存",
   unbind: "解绑",
   pushNow: "立即推送",
+  forcePush: "强制推送",
+  forceConfirmTitle: "确认强制推送？",
+  forceConfirmBody: "强推会用本地历史覆盖远端 {repo}#{branch}。远端上比本地新的提交将永久丢失，其他协作者需要重新同步。此操作不可撤销。",
+  forceConfirmAck: "我已了解风险，确认执行强推",
+  forceConfirmGo: "确认强推",
   cmdLabel: "推送",
   cmdDesc: "将当前工作区推送到已绑定的 GitHub 仓库。",
   pushStarted: "开始推送…",
@@ -384,6 +390,11 @@ const en = {
   save: "Save",
   unbind: "Unbind",
   pushNow: "Push now",
+  forcePush: "Force push",
+  forceConfirmTitle: "Force-push this workspace?",
+  forceConfirmBody: "A force push overwrites {repo}#{branch} with your local history. Remote commits newer than local are lost permanently, and collaborators must re-sync. This cannot be undone.",
+  forceConfirmAck: "I understand the risk — force-push anyway",
+  forceConfirmGo: "Confirm force push",
   cmdLabel: "Push",
   cmdDesc: "Push the current workspace to its bound GitHub repository.",
   pushStarted: "Push started…",
@@ -912,6 +923,9 @@ function BindingEditor({ t, workspace, binding, defaults, onChanged }) {
   const [newRepoName, setNewRepoName] = React.useState("")
   const [pending, setPending] = React.useState(null)
   const [result, setResult] = React.useState(null)
+  /** The force-push confirmation: open dialog + the risk-acknowledge checkbox. */
+  const [forceOpen, setForceOpen] = React.useState(false)
+  const [forceAck, setForceAck] = React.useState(false)
 
   React.useEffect(() => {
     setOwnerRepo(binding === undefined ? "" : `${binding.owner}/${binding.repo}`)
@@ -1171,6 +1185,17 @@ function BindingEditor({ t, workspace, binding, defaults, onChanged }) {
           {pending === "push" ? <Working>{t("pushing")}</Working> : t("pushNow")}
         </Button>
         <Button
+          variant="outline"
+          className="gp-fill text-destructive hover:text-destructive"
+          disabled={pending !== null || binding === undefined}
+          onClick={() => {
+            setForceAck(false)
+            setForceOpen(true)
+          }}
+        >
+          {pending === "force" ? <Working>{t("pushing")}</Working> : t("forcePush")}
+        </Button>
+        <Button
           variant="destructive"
           className="ml-auto"
           disabled={pending !== null || binding === undefined}
@@ -1179,6 +1204,46 @@ function BindingEditor({ t, workspace, binding, defaults, onChanged }) {
           {t("unbind")}
         </Button>
       </CardFooter>
+
+      {/* Two-step confirmation for the destructive push: the dialog itself is
+          the first step, the risk-acknowledge checkbox gates the final button
+          as the second. The host force-pushes with `--force-with-lease`, so a
+          remote that moved outside this client's view still refuses. */}
+      <Dialog open={forceOpen} onOpenChange={(open) => !open && setForceOpen(false)}>
+        <DialogContent showCloseButton data-dsh-github-push>
+          <DialogHeader>
+            <DialogTitle className="text-base font-semibold">{t("forceConfirmTitle")}</DialogTitle>
+            <DialogDescription>
+              {t("forceConfirmBody", { repo: `${binding?.owner ?? ""}/${binding?.repo ?? ""}`, branch: binding?.branch || "-" })}
+            </DialogDescription>
+          </DialogHeader>
+          <label className="flex min-w-0 cursor-pointer items-start gap-2 rounded-md border border-border p-3 text-sm">
+            <input
+              type="checkbox"
+              className="mt-0.5 size-4 shrink-0 accent-destructive"
+              checked={forceAck}
+              onChange={(event) => setForceAck(event.target.checked)}
+            />
+            <span>{t("forceConfirmAck")}</span>
+          </label>
+          <DialogFooter className="flex flex-wrap gap-2">
+            <Button variant="ghost" disabled={pending === "force"} onClick={() => setForceOpen(false)}>
+              {t("cancel")}
+            </Button>
+            <Button
+              variant="destructive"
+              className="ml-auto"
+              disabled={!forceAck || pending === "force"}
+              onClick={async () => {
+                const outcome = await act("force", () => callRpc("push.now", { workspace: path, force: true }))
+                if (outcome !== null) setForceOpen(false)
+              }}
+            >
+              {pending === "force" ? <Working>{t("pushing")}</Working> : t("forceConfirmGo")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Card>
   )
 }
